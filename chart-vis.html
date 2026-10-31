@@ -36,7 +36,14 @@ h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em;overflow-wrap:a
 #time{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;min-width:112px}
 #bpm{color:var(--mut);font-variant-numeric:tabular-nums;min-width:74px}
 .grp{display:flex;align-items:center;gap:6px;white-space:nowrap}
-#secn{width:62px;background:var(--bg);color:var(--fg);border:1px solid var(--ln);border-radius:4px;padding:4px 6px;font:inherit}
+#secn,.num{width:62px;background:var(--bg);color:var(--fg);border:1px solid var(--ln);border-radius:4px;padding:4px 6px;font:inherit}
+#bar .num{width:58px}
+.fld{display:flex;align-items:center;gap:6px;color:var(--mut);font-size:13px}
+.fld .num{width:80px}
+.sbtn{font:inherit;font-size:13px;font-weight:600;color:var(--fg);background:none;border:1.5px solid var(--fg);border-radius:6px;padding:6px 13px;cursor:pointer}
+.sbtn:hover:not(:disabled){background:var(--fg);color:var(--bg)}
+.sbtn:disabled{opacity:.4;cursor:default}
+.sbtn:focus-visible,.num:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
 #bar select{background:var(--bg);color:var(--fg);border:1px solid var(--ln);border-radius:4px;padding:4px;font:inherit}
 #bar label{color:var(--mut);display:flex;align-items:center;gap:6px;white-space:nowrap}
 #bar input[type=range]{accent-color:var(--acc)}
@@ -52,6 +59,12 @@ h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em;overflow-wrap:a
     <label class="btn" id="bi">Instrumental<input type="file" id="fi" accept="audio/*"></label>
     <label class="btn" id="bv">Voices<input type="file" id="fv" accept="audio/*"></label>
   </div>
+  <div class="btns">
+    <label class="fld" title="Starting BPM. Notes keep their timestamps; only the beat and section grid changes.">BPM <input class="num" type="number" id="bpmIn" min="1" max="2000" step="any" disabled></label>
+    <label class="fld">Note speed <input class="num" type="number" id="spdIn" min="0.1" max="20" step="0.1" disabled></label>
+    <button class="sbtn" id="save" disabled>Save JSON</button>
+    <button class="sbtn" id="reset" disabled>Reset</button>
+  </div>
   <div id="status" role="status"></div>
 </header>
 <div id="stage">
@@ -64,10 +77,10 @@ h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em;overflow-wrap:a
   <div id="time">00:00.00</div><div id="bpm">0 BPM</div>
   <input type="range" id="seek" min="0" max="1" step="1" value="0" disabled aria-label="Position">
   <label>Speed <select id="rate"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label>
-  <label>Zoom <input type="range" id="zoom" min="0.15" max="1.4" step="0.01" value="0.5"></label>
-  <label>Main <input class="vol" type="range" id="vm" min="0" max="1" step="0.01" value="1"></label>
-  <label>Instrumental <input class="vol" type="range" id="vi" min="0" max="1" step="0.01" value="1"></label>
-  <label>Voices <input class="vol" type="range" id="vv" min="0" max="1" step="0.01" value="1"></label>
+  <label>Zoom <input type="range" id="zoom" min="0.1" max="2" step="0.01" value="0.5"><input class="num" type="number" id="zoomN" min="10" max="500" value="100" aria-label="Zoom percent">%</label>
+  <label>Main <input class="vol" type="range" id="vm" min="0" max="1" step="0.01" value="1"><input class="num" type="number" id="vmN" min="0" max="100" value="100" aria-label="Main volume percent">%</label>
+  <label>Instrumental <input class="vol" type="range" id="vi" min="0" max="1" step="0.01" value="1"><input class="num" type="number" id="viN" min="0" max="100" value="100" aria-label="Instrumental volume percent">%</label>
+  <label>Voices <input class="vol" type="range" id="vv" min="0" max="1" step="0.01" value="1"><input class="num" type="number" id="vvN" min="0" max="100" value="100" aria-label="Voices volume percent">%</label>
   <label><input type="checkbox" id="dupchk" checked> Mark stacked duplicates</label>
 </footer>
 <script>
@@ -103,7 +116,32 @@ function parse(d){
   });
   const notes=[...map.values()].sort((a,b)=>a.t-b.t);
   const last=notes.length?Math.max(...notes.map(n=>n.t+n.len)):0;
-  return{name,S,secs,notes,dups,end:Math.max(t0,last+1000),maxLen:Math.max(0,...notes.map(n=>n.len))};
+  const c={name,raw:d,S,notes,dups,lastEnd:last,maxLen:Math.max(0,...notes.map(n=>n.len)),bpm0:+S.bpm||120,speed0:+S.speed||1};
+  c.bpm=c.bpm0;c.speed=c.speed0;layout(c);return c;
+}
+/* Rebuilds only the beat/section grid from the current BPM. Notes keep their timestamps. */
+function layout(c){
+  let bpm=c.bpm,t0=0;
+  c.secs=c.S.notes.map((sec,i)=>{
+    const beats=+sec.sectionBeats||(sec.lengthInSteps?sec.lengthInSteps/4:4);
+    if(sec.changeBPM&&+sec.bpm)bpm=+sec.bpm;
+    const beat=60000/bpm,len=beats*beat,s={i,start:t0,len,bpm,beats,beat,change:!!sec.changeBPM};t0+=len;return s;
+  });
+  c.end=Math.max(t0,c.lastEnd+1000);
+}
+function chartUi(){
+  const c=chart,ed=c.bpm!==c.bpm0||c.speed!==c.speed0;
+  $('#meta').textContent=`${+c.bpm.toFixed(3)} BPM, speed ${c.speed}, ${c.secs.length} sections, ${c.notes.length.toLocaleString()} notes${c.dups?`, ${c.dups} stacked duplicates hidden`:''}${ed?'. Edited, not saved yet':''}`;
+  $('#sect').textContent=c.secs.length-1;$('#secn').max=c.secs.length-1;$('#seek').max=Math.round(c.end);dirty=true;
+}
+function save(){
+  if(!chart)return;
+  const out=JSON.parse(JSON.stringify(chart.raw)),S=(out.song&&typeof out.song==='object')?out.song:out;
+  if(chart.bpm!==chart.bpm0){S.bpm=chart.bpm;let b=chart.bpm;S.notes.forEach(sec=>{if(sec.changeBPM&&+sec.bpm)b=+sec.bpm;else sec.bpm=b})}
+  if(chart.speed!==chart.speed0)S.speed=chart.speed;
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(out)],{type:'application/json'}));
+  a.download=chart.file||'chart.json';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+  say(`Saved ${a.download}. Notes were not changed.`);
 }
 
 function curSec(){return Math.max(0,lb(chart.secs,s=>s.start,cur+.5)-1)}
@@ -164,32 +202,33 @@ function wave(tr,x,w,HD,H,playY,color){
 function draw(){
   const W=cv.clientWidth,H=cv.clientHeight;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);
   if(!chart)return;
-  const HD=34,playY=HD+(H-HD)*.2,LW=54,wfW=84,gap=14,gridW=LW*8;
+  const HD=34,playY=HD+(H-HD)*.2,LW=54,wfW=84,gap=14,SEP=96,gridW=LW*8+SEP;
   const x0=Math.max(8,(W-(wfW*2+gap*2+gridW+70))/2),gx=x0+wfW*2+gap*2,gr=gx+gridW;
+  const colX=c=>gx+c*LW+(c>=4?SEP:0);
   const tAt=y=>cur+(y-playY)/zoom,yAt=t=>playY+(t-cur)*zoom,tmin=tAt(HD),tmax=tAt(H);
   ctx.font='600 12px "Avenir Next","Segoe UI",system-ui,sans-serif';ctx.textAlign='center';ctx.fillStyle='#9c98aa';
   ctx.fillText('Instrumental',x0+wfW/2,22);ctx.fillText('Voices',x0+wfW+gap+wfW/2,22);
-  ctx.fillText('Opponent',gx+LW*2,22);ctx.fillText('Player',gx+LW*6,22);
+  ctx.fillText('Opponent',gx+LW*2,22);ctx.fillText('Player',colX(4)+LW*2,22);
   ctx.save();ctx.beginPath();ctx.rect(0,HD,W,H-HD);ctx.clip();
   wave(T.inst,x0,wfW,HD,H,playY,'#5b8def');wave(T.voices,x0+wfW+gap,wfW,HD,H,playY,'#f0a04b');
-  for(let c=0;c<8;c++){ctx.fillStyle=c%2?'rgba(255,255,255,.015)':'rgba(255,255,255,.045)';ctx.fillRect(gx+c*LW,HD,LW,H-HD)}
-  ctx.fillStyle='rgba(255,255,255,.12)';for(let c=0;c<=8;c++)ctx.fillRect(gx+c*LW-(c===4?1:0),HD,c===4?2:1,H-HD);
+  for(let c=0;c<8;c++){ctx.fillStyle=c%2?'rgba(255,255,255,.015)':'rgba(255,255,255,.045)';ctx.fillRect(colX(c),HD,LW,H-HD)}
+  ctx.fillStyle='rgba(255,255,255,.12)';for(let c=0;c<8;c++){ctx.fillRect(colX(c),HD,1,H-HD);if(c===3||c===7)ctx.fillRect(colX(c)+LW,HD,1,H-HD)}
   const S=chart.secs,s0=Math.max(0,lb(S,s=>s.start,tmin)-1),curI=curSec();ctx.textAlign='left';
   for(let i=s0;i<S.length&&S[i].start<=tmax;i++){const s=S[i];
-    for(let b=1;b<s.beats;b++){const y=Math.round(yAt(s.start+b*s.beat))+.5;ctx.fillStyle='rgba(255,255,255,.09)';ctx.fillRect(gx,y,gridW,1)}
+    for(let b=1;b<s.beats;b++){const y=Math.round(yAt(s.start+b*s.beat))+.5;ctx.fillStyle='rgba(255,255,255,.09)';ctx.fillRect(gx,y,LW*4,1);ctx.fillRect(colX(4),y,LW*4,1)}
     const y=Math.round(yAt(s.start));ctx.fillStyle=i===curI?'#46bff0':'rgba(255,255,255,.45)';ctx.fillRect(x0,y,gr-x0,i===curI?2:1);
     ctx.fillText(s.change?`${i}  ${+s.bpm.toFixed(1)} BPM`:String(i),gr+10,y+14);
   }
   const lit=Array(8).fill(0),showDup=$('#dupchk').checked,N=chart.notes;
   for(let i=Math.max(0,lb(N,n=>n.t,tmin-chart.maxLen-60));i<N.length&&N[i].t<=tmax+60;i++){
-    const n=N[i],cx=gx+n.col*LW+LW/2,y=yAt(n.t);
+    const n=N[i],cx=colX(n.col)+LW/2,y=yAt(n.t);
     if(n.len>0){const h=n.len*zoom;ctx.globalAlpha=n.t+n.len<cur?.25:.55;ctx.fillStyle=COL[n.lane];ctx.fillRect(cx-6,y,12,h);ctx.globalAlpha=1}
     const past=n.t<cur-25;
     if(n.t<=cur&&cur-n.t<140)lit[n.col]=Math.max(lit[n.col],1-(cur-n.t)/140);
     arrow(cx,y,40,n.lane,COL[n.lane],past?.4:1);
     if(showDup&&n.dup>1){ctx.beginPath();ctx.arc(cx+17,y-17,8,0,7);ctx.fillStyle='#ff9a5c';ctx.fill();ctx.fillStyle='#14121a';ctx.textAlign='center';ctx.font='700 10px system-ui,sans-serif';ctx.fillText(n.dup,cx+17,y-13.5);ctx.textAlign='left'}
   }
-  for(let c=0;c<8;c++){const cx=gx+c*LW+LW/2,l=lit[c];arrow(cx,playY,40*(1+l*.12),c%4,l>0?COL[c%4]:null,l>0?.35+.65*l:.8)}
+  for(let c=0;c<8;c++){const cx=colX(c)+LW/2,l=lit[c];arrow(cx,playY,40*(1+l*.12),c%4,l>0?COL[c%4]:null,l>0?.35+.65*l:.8)}
   ctx.fillStyle='rgba(255,255,255,.55)';ctx.fillRect(x0,Math.round(playY)-1,gr-x0,1);
   ctx.restore();
 }
@@ -217,11 +256,10 @@ function loadChart(file){
   const fr=new FileReader();
   fr.onload=()=>{try{
     const c=parse(JSON.parse(fr.result));pause();chart=c;cur=0;
-    $('#ttl').textContent=c.name;
-    $('#meta').textContent=`${c.S.bpm||'?'} BPM, speed ${c.S.speed??'?'}, ${c.secs.length} sections, ${c.notes.length.toLocaleString()} notes${c.dups?`, ${c.dups} stacked duplicates hidden`:''}`;
+    c.file=file.name;$('#ttl').textContent=c.name;chartUi();
+    $('#bpmIn').value=c.bpm;$('#spdIn').value=c.speed;
     $('#empty').hidden=true;$('#bc').classList.add('on');
-    $('#sect').textContent=c.secs.length-1;$('#secn').max=c.secs.length-1;$('#seek').max=Math.round(c.end);
-    for(const id of['play','prev','next','secn','seek'])$('#'+id).disabled=false;
+    for(const id of['play','prev','next','secn','seek','bpmIn','spdIn','save','reset'])$('#'+id).disabled=false;
     say(`${file.name} loaded. ${master()?'':'No audio loaded, so playback is silent.'}`);dirty=true;
   }catch(e){say(e instanceof SyntaxError?'This file is not valid JSON.':e.message,true)}};
   fr.onerror=()=>say('The file could not be read.',true);fr.readAsText(file);
@@ -244,13 +282,26 @@ $('#play').onclick=toggle;$('#prev').onclick=prevSec;$('#next').onclick=nextSec;
 $('#secn').onchange=e=>jump(+e.target.value);
 $('#seek').oninput=e=>seek(+e.target.value);
 $('#rate').onchange=e=>{rate=+e.target.value;if(playing){base=time();pt0=performance.now()}for(const k of['inst','voices'])if(T[k])T[k].audio.playbackRate=rate};
-$('#zoom').oninput=e=>{zoom=+e.target.value;dirty=true};
+function setZoom(z,skipNum){zoom=Math.max(.05,Math.min(2.5,z));$('#zoom').value=zoom;if(!skipNum)$('#zoomN').value=Math.round(zoom/.5*100);dirty=true}
+$('#zoom').oninput=e=>setZoom(+e.target.value);
+$('#zoomN').oninput=e=>{const v=parseFloat(e.target.value);if(v>=10&&v<=500)setZoom(v/100*.5,true)};
+$('#zoomN').onchange=()=>setZoom(zoom);
 $('#dupchk').onchange=()=>dirty=true;
-$('#vm').oninput=e=>{vol.main=+e.target.value;applyVol()};
-$('#vi').oninput=e=>{vol.inst=+e.target.value;applyVol()};
-$('#vv').oninput=e=>{vol.voices=+e.target.value;applyVol()};
+const VK={vm:'main',vi:'inst',vv:'voices'};
+function setVol(id,p,skipNum){p=Math.max(0,Math.min(100,p));vol[VK[id]]=p/100;$('#'+id).value=p/100;if(!skipNum)$('#'+id+'N').value=Math.round(p);applyVol()}
+for(const id in VK){
+  $('#'+id).oninput=e=>setVol(id,e.target.value*100);
+  $('#'+id+'N').oninput=e=>{const v=parseFloat(e.target.value);if(!isNaN(v))setVol(id,v,true)};
+  $('#'+id+'N').onchange=()=>setVol(id,vol[VK[id]]*100);
+}
+$('#bpmIn').oninput=e=>{const v=+e.target.value;if(chart&&v>=1&&v<=2000){chart.bpm=v;layout(chart);cur=Math.min(cur,chart.end);chartUi()}};
+$('#bpmIn').onchange=()=>{if(chart)$('#bpmIn').value=chart.bpm};
+$('#spdIn').oninput=e=>{const v=+e.target.value;if(chart&&v>=.1&&v<=20){chart.speed=v;chartUi()}};
+$('#spdIn').onchange=()=>{if(chart)$('#spdIn').value=chart.speed};
+$('#reset').onclick=()=>{if(!chart)return;chart.bpm=chart.bpm0;chart.speed=chart.speed0;layout(chart);$('#bpmIn').value=chart.bpm;$('#spdIn').value=chart.speed;chartUi()};
+$('#save').onclick=save;
 cv.addEventListener('wheel',e=>{e.preventDefault();if(!chart)return;
-  if(e.ctrlKey){zoom=Math.max(.15,Math.min(1.4,zoom*(e.deltaY>0?.92:1.08)));$('#zoom').value=zoom;dirty=true}
+  if(e.ctrlKey)setZoom(zoom*(e.deltaY>0?.92:1.08))
   else seek((playing?time():cur)+e.deltaY/zoom*.6)},{passive:false});
 let drag=null;
 cv.addEventListener('pointerdown',e=>{if(!chart)return;cv.setPointerCapture(e.pointerId);drag={y:e.clientY,was:playing};pause()});
@@ -259,7 +310,7 @@ const endDrag=()=>{if(drag&&drag.was)play();drag=null};
 cv.addEventListener('pointerup',endDrag);cv.addEventListener('pointercancel',endDrag);
 addEventListener('keydown',e=>{
   if(!chart||e.target.matches('input[type=number],select'))return;
-  const k=e.code;
+  const k=e.code;if(k==='Space'&&e.target.matches('.sbtn'))return;
   if(k==='Space'){e.preventDefault();toggle()}
   else if(k==='ArrowRight'){e.preventDefault();nextSec()}
   else if(k==='ArrowLeft'){e.preventDefault();prevSec()}
