@@ -1,6 +1,6 @@
 Html file that visualizes Psych Engine chart (json)                 
 For kade engine chart, use jsm925's Funkin Chart                     
-Tested with Psych Engine 1.0.4, i used html cuz its easy to use                             
+Tested with Psych Engine 1.0.4                          
 If it desyncs refresh the page                         
 ---  Notice  ---                                
 Some mods have different voices files, split into opponent's voice and player's voice, so please name them correctly like this:                                   
