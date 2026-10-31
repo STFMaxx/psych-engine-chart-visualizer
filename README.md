@@ -8,3 +8,4 @@ Inst.ogg goes to Instrumental.
 Voices-Opponent.ogg goes to the opponent voice.                              
 Voices-Player.ogg goes to the player voice.                           
 A single Voices.ogg goes to the player voice.                            
+If a song only have 1 chart, and there is no opponent's notes, then the player's notes might replace opponent's notes, somehow
