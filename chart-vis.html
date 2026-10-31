@@ -20,6 +20,11 @@ h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em;overflow-wrap:a
 .btn.on{border-color:#58d46f;color:#58d46f}
 .btn.on:hover{background:#58d46f;color:var(--bg)}
 .btn input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
+.slot{display:inline-flex;gap:4px;align-items:stretch}
+.x{font:inherit;font-size:16px;font-weight:700;color:var(--fg);background:none;border:1.5px solid var(--fg);border-radius:6px;padding:0 10px;cursor:pointer}
+.x:hover{background:var(--bad);border-color:var(--bad);color:var(--bg)}
+.x:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.x[hidden]{display:none}
 #status{width:100%;font-size:13px;color:var(--mut);min-height:18px}
 #status.err{color:var(--bad)}
 #stage{position:relative;flex:1;min-height:0}
@@ -53,11 +58,11 @@ h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em;overflow-wrap:a
 </head>
 <body>
 <header id="top">
-  <div><h1 id="ttl">Chart visualizer</h1><div id="meta">Load a Psych Engine chart (.json). for kade engine charts use jsm925's Funkin Chart.</div></div>
+  <div><h1 id="ttl">Chart visualizer</h1><div id="meta">Load a Psych Engine chart (.json). Audio is optional.</div></div>
   <div class="btns">
-    <label class="btn" id="bc">Chart (.json)<input type="file" id="fc" accept=".json,application/json"></label>
-    <label class="btn" id="bi">Instrumental<input type="file" id="fi" accept="audio/*"></label>
-    <label class="btn" id="bv">Voices<input type="file" id="fv" accept="audio/*"></label>
+    <span class="slot"><label class="btn" id="bc"><span id="tc">Chart (.json)</span><input type="file" id="fc" accept=".json,application/json"></label><button class="x" id="xc" hidden aria-label="Remove chart" title="Remove chart">×</button></span>
+    <span class="slot"><label class="btn" id="bi"><span id="ti">Instrumental</span><input type="file" id="fi" accept="audio/*"></label><button class="x" id="xi" hidden aria-label="Remove instrumental" title="Remove instrumental">×</button></span>
+    <span class="slot"><label class="btn" id="bv"><span id="tv">Voices</span><input type="file" id="fv" accept="audio/*"></label><button class="x" id="xv" hidden aria-label="Remove voices" title="Remove voices">×</button></span>
   </div>
   <div class="btns">
     <label class="fld" title="Starting BPM. Notes keep their timestamps; only the beat and section grid changes.">BPM <input class="num" type="number" id="bpmIn" min="1" max="2000" step="any" disabled></label>
@@ -69,7 +74,7 @@ h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em;overflow-wrap:a
 </header>
 <div id="stage">
   <canvas id="cv" aria-label="Chart notes"></canvas>
-  <div id="empty"><div><b>No chart loaded</b>Drop a .json file here, inst and voices are optional.<br>Files with “voice” in the name are used as voices.</div></div>
+  <div id="empty"><div><b>No chart loaded</b>Drop a chart .json here, plus optional instrumental and voices audio files.<br>Files with “voice” in the name are used as voices.</div></div>
 </div>
 <footer id="bar">
   <button id="play" disabled>Play</button>
@@ -154,7 +159,7 @@ async function loadAudio(file,kind){
   const url=URL.createObjectURL(file),audio=new Audio(url);audio.preload='auto';audio.preservesPitch=true;audio.playbackRate=rate;
   audio.addEventListener('ended',()=>{if(playing&&master()===audio){base=cur;pt0=performance.now();useClock=true}});
   const tr=T[kind]={audio,url,peaks:null,max:1,name:file.name};
-  (kind==='inst'?$('#bi'):$('#bv')).classList.add('on');
+  slotOn(kind==='inst'?'i':'v',true);
   applyVol();if(playing){audio.currentTime=cur/1000;audio.play().catch(()=>{})}else audio.currentTime=cur/1000;
   say(`Decoding ${file.name} for the waveform…`);
   try{
@@ -258,21 +263,40 @@ function loadChart(file){
     const c=parse(JSON.parse(fr.result));pause();chart=c;cur=0;
     c.file=file.name;$('#ttl').textContent=c.name;chartUi();
     $('#bpmIn').value=c.bpm;$('#spdIn').value=c.speed;
-    $('#empty').hidden=true;$('#bc').classList.add('on');
+    $('#empty').hidden=true;slotOn('c',true);
     for(const id of['play','prev','next','secn','seek','bpmIn','spdIn','save','reset'])$('#'+id).disabled=false;
     say(`${file.name} loaded. ${master()?'':'No audio loaded, so playback is silent.'}`);dirty=true;
   }catch(e){say(e instanceof SyntaxError?'This file is not valid JSON.':e.message,true)}};
   fr.onerror=()=>say('The file could not be read.',true);fr.readAsText(file);
 }
+const LBL={c:['Chart (.json)','Replace chart'],i:['Instrumental','Replace instrumental'],v:['Voices','Replace voices']};
+function slotOn(k,on){$('#b'+k).classList.toggle('on',on);$('#t'+k).textContent=LBL[k][on?1:0];$('#x'+k).hidden=!on}
+const okDiscard=()=>!chart||(chart.bpm===chart.bpm0&&chart.speed===chart.speed0)||confirm('Discard your unsaved BPM and note speed edits?');
+function removeAudio(kind){
+  const tr=T[kind];if(!tr)return;const was=playing;pause();
+  tr.audio.pause();tr.audio.removeAttribute('src');tr.audio.load();URL.revokeObjectURL(tr.url);T[kind]=null;
+  slotOn(kind==='inst'?'i':'v',false);
+  say(`${tr.name} removed.${master()?'':' No audio loaded, so playback is silent.'}`);dirty=true;if(was)play();
+}
+function removeChart(){
+  if(!chart||!okDiscard())return;pause();chart=null;cur=0;
+  $('#ttl').textContent='Chart visualizer';$('#meta').textContent='Load a Psych Engine chart (.json). Audio is optional.';
+  $('#empty').hidden=false;slotOn('c',false);
+  for(const id of['play','prev','next','secn','seek','bpmIn','spdIn','save','reset'])$('#'+id).disabled=true;
+  $('#time').textContent='00:00.00';$('#bpm').textContent='0 BPM';$('#secn').value=0;$('#sect').textContent=0;$('#seek').value=0;
+  $('#play').textContent='Play';$('#bpmIn').value='';$('#spdIn').value='';
+  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,cv.clientWidth,cv.clientHeight);say('Chart removed.');
+}
 function route(f){
   if(!f)return;
-  if(/\.json$/i.test(f.name)||f.type==='application/json')loadChart(f);
+  if(/\.json$/i.test(f.name)||f.type==='application/json'){if(okDiscard())loadChart(f)}
   else if(/^audio\//.test(f.type)||/\.(ogg|mp3|wav|flac|m4a|aac|opus)$/i.test(f.name))loadAudio(f,/voice/i.test(f.name)?'voices':'inst');
   else say(`${f.name} is not a chart .json or an audio file.`,true);
 }
-$('#fc').onchange=e=>route(e.target.files[0]);
-$('#fi').onchange=e=>e.target.files[0]&&loadAudio(e.target.files[0],'inst');
-$('#fv').onchange=e=>e.target.files[0]&&loadAudio(e.target.files[0],'voices');
+$('#fc').onchange=e=>{route(e.target.files[0]);e.target.value=''};
+$('#fi').onchange=e=>{if(e.target.files[0])loadAudio(e.target.files[0],'inst');e.target.value=''};
+$('#fv').onchange=e=>{if(e.target.files[0])loadAudio(e.target.files[0],'voices');e.target.value=''};
+$('#xc').onclick=removeChart;$('#xi').onclick=()=>removeAudio('inst');$('#xv').onclick=()=>removeAudio('voices');
 addEventListener('dragover',e=>{e.preventDefault();document.body.classList.add('drag')});
 addEventListener('dragleave',e=>{if(!e.relatedTarget)document.body.classList.remove('drag')});
 addEventListener('drop',e=>{e.preventDefault();document.body.classList.remove('drag');[...e.dataTransfer.files].forEach(route)});
