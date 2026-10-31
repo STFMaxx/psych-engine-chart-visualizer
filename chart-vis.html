@@ -62,7 +62,8 @@ h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em;overflow-wrap:a
   <div class="btns">
     <span class="slot"><label class="btn" id="bc"><span id="tc">Chart (.json)</span><input type="file" id="fc" accept=".json,application/json"></label><button class="x" id="xc" hidden aria-label="Remove chart" title="Remove chart">×</button></span>
     <span class="slot"><label class="btn" id="bi"><span id="ti">Instrumental</span><input type="file" id="fi" accept="audio/*"></label><button class="x" id="xi" hidden aria-label="Remove instrumental" title="Remove instrumental">×</button></span>
-    <span class="slot"><label class="btn" id="bv"><span id="tv">Voices</span><input type="file" id="fv" accept="audio/*"></label><button class="x" id="xv" hidden aria-label="Remove voices" title="Remove voices">×</button></span>
+    <span class="slot"><label class="btn" id="bo"><span id="to">Opponent voice</span><input type="file" id="fo" accept="audio/*"></label><button class="x" id="xo" hidden aria-label="Remove opponent voice" title="Remove opponent voice">×</button></span>
+    <span class="slot"><label class="btn" id="bp"><span id="tp">Player voice</span><input type="file" id="fp" accept="audio/*"></label><button class="x" id="xp" hidden aria-label="Remove player voice" title="Remove player voice">×</button></span>
   </div>
   <div class="btns">
     <label class="fld" title="Starting BPM. Notes keep their timestamps; only the beat and section grid changes.">BPM <input class="num" type="number" id="bpmIn" min="1" max="2000" step="any" disabled></label>
@@ -74,7 +75,7 @@ h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em;overflow-wrap:a
 </header>
 <div id="stage">
   <canvas id="cv" aria-label="Chart notes"></canvas>
-  <div id="empty"><div><b>No chart loaded</b>Drop a chart .json here, plus optional instrumental and voices audio files.<br>Files with “voice” in the name are used as voices.</div></div>
+  <div id="empty"><div><b>No chart loaded</b>Drop a chart .json here, plus optional instrumental and voices audio files.<br>For more info, go see README.</div></div>
 </div>
 <footer id="bar">
   <button id="play" disabled>Play</button>
@@ -85,7 +86,8 @@ h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em;overflow-wrap:a
   <label>Zoom <input type="range" id="zoom" min="0.1" max="2" step="0.01" value="0.5"><input class="num" type="number" id="zoomN" min="10" max="500" value="100" aria-label="Zoom percent">%</label>
   <label>Main <input class="vol" type="range" id="vm" min="0" max="1" step="0.01" value="1"><input class="num" type="number" id="vmN" min="0" max="100" value="100" aria-label="Main volume percent">%</label>
   <label>Instrumental <input class="vol" type="range" id="vi" min="0" max="1" step="0.01" value="1"><input class="num" type="number" id="viN" min="0" max="100" value="100" aria-label="Instrumental volume percent">%</label>
-  <label>Voices <input class="vol" type="range" id="vv" min="0" max="1" step="0.01" value="1"><input class="num" type="number" id="vvN" min="0" max="100" value="100" aria-label="Voices volume percent">%</label>
+  <label>Opp. voice <input class="vol" type="range" id="vo" min="0" max="1" step="0.01" value="1"><input class="num" type="number" id="voN" min="0" max="100" value="100" aria-label="Opponent voice volume percent">%</label>
+  <label>Player voice <input class="vol" type="range" id="vp" min="0" max="1" step="0.01" value="1"><input class="num" type="number" id="vpN" min="0" max="100" value="100" aria-label="Player voice volume percent">%</label>
   <label><input type="checkbox" id="dupchk" checked> Mark stacked duplicates</label>
 </footer>
 <script>
@@ -94,7 +96,9 @@ const COL=['#c24b99','#1fd0f2','#12fa05','#f9393f'],ROT=[0,-Math.PI/2,Math.PI/2,
 const NAMES=['Left','Down','Up','Right'];
 const cv=$('#cv'),ctx=cv.getContext('2d');
 let chart=null,cur=0,playing=false,dirty=true,zoom=.5,rate=1,base=0,pt0=0,useClock=true,dpr=1;
-const T={inst:null,voices:null},vol={main:1,inst:1,voices:1};
+const KS=['inst','vo','vp'],SL={inst:'i',vo:'o',vp:'p'};
+const T={inst:null,vo:null,vp:null},vol={main:1,inst:1,vo:1,vp:1};
+let mT=-1,mW=0,lastOut=0;
 let actx=null;
 
 const tf=ms=>{ms=Math.max(0,ms);const m=Math.floor(ms/60000),s=(ms%60000)/1000;return String(m).padStart(2,'0')+':'+s.toFixed(2).padStart(5,'0')};
@@ -152,14 +156,14 @@ function save(){
 function curSec(){return Math.max(0,lb(chart.secs,s=>s.start,cur+.5)-1)}
 
 /* ---------- audio ---------- */
-function master(){return (T.inst||T.voices||{}).audio||null}
-function applyVol(){for(const k of['inst','voices'])if(T[k])T[k].audio.volume=Math.min(1,vol.main*vol[k])}
+function master(){return (T.inst||T.vp||T.vo||{}).audio||null}
+function applyVol(){for(const k of KS)if(T[k])T[k].audio.volume=Math.min(1,vol.main*vol[k])}
 async function loadAudio(file,kind){
   if(T[kind]){T[kind].audio.pause();URL.revokeObjectURL(T[kind].url)}
   const url=URL.createObjectURL(file),audio=new Audio(url);audio.preload='auto';audio.preservesPitch=true;audio.playbackRate=rate;
   audio.addEventListener('ended',()=>{if(playing&&master()===audio){base=cur;pt0=performance.now();useClock=true}});
   const tr=T[kind]={audio,url,peaks:null,max:1,name:file.name};
-  slotOn(kind==='inst'?'i':'v',true);
+  slotOn(SL[kind],true);
   applyVol();if(playing){audio.currentTime=cur/1000;audio.play().catch(()=>{})}else audio.currentTime=cur/1000;
   say(`Decoding ${file.name} for the waveform…`);
   try{
@@ -174,19 +178,31 @@ async function loadAudio(file,kind){
 }
 
 /* ---------- transport ---------- */
-function time(){const m=master();if(m&&!useClock)return m.currentTime*1000;return base+(performance.now()-pt0)*rate}
+/* The browser reports audio position in coarse steps, so the chart is smoothed between steps. */
+function time(){
+  const m=master();
+  if(m&&!useClock){
+    const now=performance.now(),t=m.currentTime*1000;
+    if(t!==mT){mT=t;mW=now}
+    let out=m.paused?t:mT+(now-mW)*rate;
+    if(out-t>120)out=t;
+    if(out<lastOut&&lastOut-out<60)out=lastOut;
+    return lastOut=out;
+  }
+  return base+(performance.now()-pt0)*rate;
+}
 function seek(t){
-  if(!chart)return;cur=Math.max(0,Math.min(chart.end,t));
-  for(const k of['inst','voices'])if(T[k])T[k].audio.currentTime=cur/1000;
+  if(!chart)return;mT=-1;lastOut=0;cur=Math.max(0,Math.min(chart.end,t));
+  for(const k of KS)if(T[k])T[k].audio.currentTime=cur/1000;
   base=cur;pt0=performance.now();const m=master();
   useClock=!m||(isFinite(m.duration)&&cur/1000>=m.duration);dirty=true;
 }
 function play(){
   if(!chart||playing)return;if(cur>=chart.end-50)cur=0;
-  playing=true;base=cur;pt0=performance.now();const m=master();useClock=!m;
-  for(const k of['inst','voices'])if(T[k]){const a=T[k].audio;a.currentTime=cur/1000;a.playbackRate=rate;a.play().catch(()=>{})}
+  mT=-1;lastOut=0;playing=true;base=cur;pt0=performance.now();const m=master();useClock=!m;
+  for(const k of KS)if(T[k]){const a=T[k].audio;a.currentTime=cur/1000;a.playbackRate=rate;a.play().catch(()=>{})}
 }
-function pause(){if(!playing)return;cur=time();playing=false;for(const k of['inst','voices'])if(T[k])T[k].audio.pause();dirty=true}
+function pause(){if(!playing)return;cur=time();playing=false;for(const k of KS)if(T[k])T[k].audio.pause();dirty=true}
 const toggle=()=>playing?pause():play();
 function jump(i){if(!chart)return;i=Math.max(0,Math.min(chart.secs.length-1,i|0));seek(chart.secs[i].start)}
 function prevSec(){const i=curSec();jump(cur-chart.secs[i].start>250?i:i-1)}
@@ -201,21 +217,22 @@ function arrow(x,y,s,lane,fill,alpha){
 }
 function wave(tr,x,w,HD,H,playY,color){
   ctx.fillStyle='rgba(255,255,255,.03)';ctx.fillRect(x,HD,w,H-HD);
-  if(!tr||!tr.peaks)return;ctx.fillStyle=color;const p=tr.peaks;
-  for(let y=HD;y<H;y++){const t=cur+(y-playY)/zoom;if(t<0)continue;const v=p[Math.floor(t/5)];if(v===undefined)continue;const hw=v/tr.max*w*.48;ctx.fillRect(x+w/2-hw,y,hw*2,1)}
+  if(!tr||!tr.peaks)return;ctx.fillStyle=color;const p=tr.peaks;ctx.beginPath();
+  for(let y=HD;y<H;y++){const t=cur+(y-playY)/zoom;if(t<0)continue;const v=p[Math.floor(t/5)];if(v===undefined)continue;const hw=v/tr.max*w*.48;ctx.rect(x+w/2-hw,y,hw*2,1)}
+  ctx.fill();
 }
 function draw(){
   const W=cv.clientWidth,H=cv.clientHeight;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);
   if(!chart)return;
-  const HD=34,playY=HD+(H-HD)*.2,LW=54,wfW=84,gap=14,SEP=96,gridW=LW*8+SEP;
-  const x0=Math.max(8,(W-(wfW*2+gap*2+gridW+70))/2),gx=x0+wfW*2+gap*2,gr=gx+gridW;
+  const HD=34,playY=HD+(H-HD)*.2,LW=54,wfW=72,gap=14,SEP=96,gridW=LW*8+SEP;
+  const x0=Math.max(8,(W-(wfW*3+gap*3+gridW+70))/2),gx=x0+wfW*3+gap*3,gr=gx+gridW;
   const colX=c=>gx+c*LW+(c>=4?SEP:0);
   const tAt=y=>cur+(y-playY)/zoom,yAt=t=>playY+(t-cur)*zoom,tmin=tAt(HD),tmax=tAt(H);
   ctx.font='600 12px "Avenir Next","Segoe UI",system-ui,sans-serif';ctx.textAlign='center';ctx.fillStyle='#9c98aa';
-  ctx.fillText('Instrumental',x0+wfW/2,22);ctx.fillText('Voices',x0+wfW+gap+wfW/2,22);
+  ctx.fillText('Instrumental',x0+wfW/2,22);ctx.fillText('Opp. voice',x0+wfW+gap+wfW/2,22);ctx.fillText('Player voice',x0+(wfW+gap)*2+wfW/2,22);
   ctx.fillText('Opponent',gx+LW*2,22);ctx.fillText('Player',colX(4)+LW*2,22);
   ctx.save();ctx.beginPath();ctx.rect(0,HD,W,H-HD);ctx.clip();
-  wave(T.inst,x0,wfW,HD,H,playY,'#5b8def');wave(T.voices,x0+wfW+gap,wfW,HD,H,playY,'#f0a04b');
+  wave(T.inst,x0,wfW,HD,H,playY,'#5b8def');wave(T.vo,x0+wfW+gap,wfW,HD,H,playY,'#d98be0');wave(T.vp,x0+(wfW+gap)*2,wfW,HD,H,playY,'#f0a04b');
   for(let c=0;c<8;c++){ctx.fillStyle=c%2?'rgba(255,255,255,.015)':'rgba(255,255,255,.045)';ctx.fillRect(colX(c),HD,LW,H-HD)}
   ctx.fillStyle='rgba(255,255,255,.12)';for(let c=0;c<8;c++){ctx.fillRect(colX(c),HD,1,H-HD);if(c===3||c===7)ctx.fillRect(colX(c)+LW,HD,1,H-HD)}
   const S=chart.secs,s0=Math.max(0,lb(S,s=>s.start,tmin)-1),curI=curSec();ctx.textAlign='left';
@@ -248,7 +265,7 @@ let lastSync=0;
 function frame(now){
   if(chart){
     if(playing){cur=time();if(cur>=chart.end){cur=chart.end;pause()}
-      if(now-lastSync>400){lastSync=now;const m=master();for(const k of['inst','voices']){const a=T[k]&&T[k].audio;if(a&&a!==m&&!useClock&&Math.abs(a.currentTime-cur/1000)>.07)a.currentTime=cur/1000}}}
+      if(now-lastSync>400){lastSync=now;const m=master();if(m&&!useClock)for(const k of KS){const a=T[k]&&T[k].audio;if(a&&a!==m&&Math.abs(a.currentTime-m.currentTime)>.05)a.currentTime=m.currentTime}}}
     if(playing||dirty){draw();hud();dirty=false}
   }
   requestAnimationFrame(frame);
@@ -269,13 +286,13 @@ function loadChart(file){
   }catch(e){say(e instanceof SyntaxError?'This file is not valid JSON.':e.message,true)}};
   fr.onerror=()=>say('The file could not be read.',true);fr.readAsText(file);
 }
-const LBL={c:['Chart (.json)','Replace chart'],i:['Instrumental','Replace instrumental'],v:['Voices','Replace voices']};
+const LBL={c:['Chart (.json)','Replace chart'],i:['Instrumental','Replace instrumental'],o:['Opponent voice','Replace opponent voice'],p:['Player/Both voice','Replace player/both voice']};
 function slotOn(k,on){$('#b'+k).classList.toggle('on',on);$('#t'+k).textContent=LBL[k][on?1:0];$('#x'+k).hidden=!on}
 const okDiscard=()=>!chart||(chart.bpm===chart.bpm0&&chart.speed===chart.speed0)||confirm('Discard your unsaved BPM and note speed edits?');
 function removeAudio(kind){
   const tr=T[kind];if(!tr)return;const was=playing;pause();
   tr.audio.pause();tr.audio.removeAttribute('src');tr.audio.load();URL.revokeObjectURL(tr.url);T[kind]=null;
-  slotOn(kind==='inst'?'i':'v',false);
+  slotOn(SL[kind],false);
   say(`${tr.name} removed.${master()?'':' No audio loaded, so playback is silent.'}`);dirty=true;if(was)play();
 }
 function removeChart(){
@@ -287,16 +304,18 @@ function removeChart(){
   $('#play').textContent='Play';$('#bpmIn').value='';$('#spdIn').value='';
   ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,cv.clientWidth,cv.clientHeight);say('Chart removed.');
 }
+const kindOf=n=>/inst/i.test(n)&&!/voice/i.test(n)?'inst':/opp/i.test(n)?'vo':/voice|play|bf/i.test(n)?'vp':'inst';
 function route(f){
   if(!f)return;
   if(/\.json$/i.test(f.name)||f.type==='application/json'){if(okDiscard())loadChart(f)}
-  else if(/^audio\//.test(f.type)||/\.(ogg|mp3|wav|flac|m4a|aac|opus)$/i.test(f.name))loadAudio(f,/voice/i.test(f.name)?'voices':'inst');
+  else if(/^audio\//.test(f.type)||/\.(ogg|mp3|wav|flac|m4a|aac|opus)$/i.test(f.name))loadAudio(f,kindOf(f.name));
   else say(`${f.name} is not a chart .json or an audio file.`,true);
 }
 $('#fc').onchange=e=>{route(e.target.files[0]);e.target.value=''};
 $('#fi').onchange=e=>{if(e.target.files[0])loadAudio(e.target.files[0],'inst');e.target.value=''};
-$('#fv').onchange=e=>{if(e.target.files[0])loadAudio(e.target.files[0],'voices');e.target.value=''};
-$('#xc').onclick=removeChart;$('#xi').onclick=()=>removeAudio('inst');$('#xv').onclick=()=>removeAudio('voices');
+$('#fo').onchange=e=>{if(e.target.files[0])loadAudio(e.target.files[0],'vo');e.target.value=''};
+$('#fp').onchange=e=>{if(e.target.files[0])loadAudio(e.target.files[0],'vp');e.target.value=''};
+$('#xc').onclick=removeChart;$('#xi').onclick=()=>removeAudio('inst');$('#xo').onclick=()=>removeAudio('vo');$('#xp').onclick=()=>removeAudio('vp');
 addEventListener('dragover',e=>{e.preventDefault();document.body.classList.add('drag')});
 addEventListener('dragleave',e=>{if(!e.relatedTarget)document.body.classList.remove('drag')});
 addEventListener('drop',e=>{e.preventDefault();document.body.classList.remove('drag');[...e.dataTransfer.files].forEach(route)});
@@ -305,13 +324,13 @@ addEventListener('drop',e=>{e.preventDefault();document.body.classList.remove('d
 $('#play').onclick=toggle;$('#prev').onclick=prevSec;$('#next').onclick=nextSec;
 $('#secn').onchange=e=>jump(+e.target.value);
 $('#seek').oninput=e=>seek(+e.target.value);
-$('#rate').onchange=e=>{rate=+e.target.value;if(playing){base=time();pt0=performance.now()}for(const k of['inst','voices'])if(T[k])T[k].audio.playbackRate=rate};
+$('#rate').onchange=e=>{rate=+e.target.value;if(playing){base=time();pt0=performance.now()}for(const k of KS)if(T[k])T[k].audio.playbackRate=rate};
 function setZoom(z,skipNum){zoom=Math.max(.05,Math.min(2.5,z));$('#zoom').value=zoom;if(!skipNum)$('#zoomN').value=Math.round(zoom/.5*100);dirty=true}
 $('#zoom').oninput=e=>setZoom(+e.target.value);
 $('#zoomN').oninput=e=>{const v=parseFloat(e.target.value);if(v>=10&&v<=500)setZoom(v/100*.5,true)};
 $('#zoomN').onchange=()=>setZoom(zoom);
 $('#dupchk').onchange=()=>dirty=true;
-const VK={vm:'main',vi:'inst',vv:'voices'};
+const VK={vm:'main',vi:'inst',vo:'vo',vp:'vp'};
 function setVol(id,p,skipNum){p=Math.max(0,Math.min(100,p));vol[VK[id]]=p/100;$('#'+id).value=p/100;if(!skipNum)$('#'+id+'N').value=Math.round(p);applyVol()}
 for(const id in VK){
   $('#'+id).oninput=e=>setVol(id,e.target.value*100);
