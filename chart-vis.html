@@ -75,7 +75,7 @@ h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em;overflow-wrap:a
 </header>
 <div id="stage">
   <canvas id="cv" aria-label="Chart notes"></canvas>
-  <div id="empty"><div><b>No chart loaded</b>Drop a chart .json here, plus optional instrumental and voices audio files.<br>For more info, go see README.</div></div>
+  <div id="empty"><div><b>No chart loaded</b>Drop a chart .json here, plus optional instrumental and voices audio files.<br>Names with “opponent” go to the opponent voice column. Other “voice” files, including a single Voices file, go to the player voice column.</div></div>
 </div>
 <footer id="bar">
   <button id="play" disabled>Play</button>
@@ -84,11 +84,16 @@ h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em;overflow-wrap:a
   <input type="range" id="seek" min="0" max="1" step="1" value="0" disabled aria-label="Position">
   <label>Speed <select id="rate"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label>
   <label>Zoom <input type="range" id="zoom" min="0.1" max="2" step="0.01" value="0.5"><input class="num" type="number" id="zoomN" min="10" max="500" value="100" aria-label="Zoom percent">%</label>
+  <label>Note size <input type="range" id="nz" min="0.5" max="3" step="0.05" value="1"><input class="num" type="number" id="nzN" min="0.5" max="3" step="0.1" value="1" aria-label="Note size multiplier">×</label>
   <label>Main <input class="vol" type="range" id="vm" min="0" max="1" step="0.01" value="1"><input class="num" type="number" id="vmN" min="0" max="100" value="100" aria-label="Main volume percent">%</label>
   <label>Instrumental <input class="vol" type="range" id="vi" min="0" max="1" step="0.01" value="1"><input class="num" type="number" id="viN" min="0" max="100" value="100" aria-label="Instrumental volume percent">%</label>
   <label>Opp. voice <input class="vol" type="range" id="vo" min="0" max="1" step="0.01" value="1"><input class="num" type="number" id="voN" min="0" max="100" value="100" aria-label="Opponent voice volume percent">%</label>
   <label>Player voice <input class="vol" type="range" id="vp" min="0" max="1" step="0.01" value="1"><input class="num" type="number" id="vpN" min="0" max="100" value="100" aria-label="Player voice volume percent">%</label>
+  <label><input type="checkbox" id="loopchk"> Loop</label>
   <label><input type="checkbox" id="dupchk" checked> Mark stacked duplicates</label>
+  <label title="How notes are split between opponent and player. Charts in the Psych 1.0 format (psych_v1) use lanes; older charts use mustHitSection."><span>Note sides</span> <select id="rule"><option value="lane">By lane (Psych 1.0)</option><option value="section">By section (older Psych)</option></select></label>
+  <label title="Moves every note to the other side. Use it when a mod charts the opponent and player the wrong way round."><input type="checkbox" id="swapchk"> Swap opponent/player notes</label>
+  <label title="Puts the player columns on the left and the opponent columns on the right, like mods that swap the strum positions."><input type="checkbox" id="mirchk"> Mirror sides</label>
 </footer>
 <script>
 const $=s=>document.querySelector(s);
@@ -98,7 +103,11 @@ const cv=$('#cv'),ctx=cv.getContext('2d');
 let chart=null,cur=0,playing=false,dirty=true,zoom=.5,rate=1,base=0,pt0=0,useClock=true,dpr=1;
 const KS=['inst','vo','vp'],SL={inst:'i',vo:'o',vp:'p'};
 const T={inst:null,vo:null,vp:null},vol={main:1,inst:1,vo:1,vp:1};
-let mT=-1,mW=0,lastOut=0;
+let mT=-1,mW=0,lastOut=0,swapOwn=false,mirror=false,rule='lane',nsize=1,loopOn=false;
+/* Visual column 0-3 is the left group, 4-7 the right group. Normally opponent is left and player is right. */
+/* Psych 1.0 charts: lanes 0-3 are always the player. Older charts: it depends on mustHitSection. */
+const own=n=>rule==='lane'?n.raw<4:(n.raw<4)===n.mh;
+const colOf=n=>{const b=own(n),pl=swapOwn?!b:b;return((mirror?!pl:pl)?4:0)+n.lane};
 let actx=null;
 
 const tf=ms=>{ms=Math.max(0,ms);const m=Math.floor(ms/60000),s=(ms%60000)/1000;return String(m).padStart(2,'0')+':'+s.toFixed(2).padStart(5,'0')};
@@ -119,13 +128,13 @@ function parse(d){
       const t=+n[0],lane=+n[1];if(isNaN(t)||!(lane>=0&&lane<=7))return;
       const k=Math.round(t)+'|'+lane,e=map.get(k);
       if(e){e.dup++;dups++;return}
-      map.set(k,{t,lane:lane%4,col:(((lane<4)===mh)?4:0)+lane%4,len:+n[2]||0,dup:1});
+      map.set(k,{t,lane:lane%4,raw:lane,mh,len:+n[2]||0,dup:1});
     });
     t0+=len;
   });
   const notes=[...map.values()].sort((a,b)=>a.t-b.t);
   const last=notes.length?Math.max(...notes.map(n=>n.t+n.len)):0;
-  const c={name,raw:d,S,notes,dups,lastEnd:last,maxLen:Math.max(0,...notes.map(n=>n.len)),bpm0:+S.bpm||120,speed0:+S.speed||1};
+  const c={name,raw:d,S,notes,dups,fixed:/^psych_v1/.test(String(S.format||d.format||'')),lastEnd:last,maxLen:Math.max(0,...notes.map(n=>n.len)),bpm0:+S.bpm||120,speed0:+S.speed||1};
   c.bpm=c.bpm0;c.speed=c.speed0;layout(c);return c;
 }
 /* Rebuilds only the beat/section grid from the current BPM. Notes keep their timestamps. */
@@ -161,7 +170,7 @@ function applyVol(){for(const k of KS)if(T[k])T[k].audio.volume=Math.min(1,vol.m
 async function loadAudio(file,kind){
   if(T[kind]){T[kind].audio.pause();URL.revokeObjectURL(T[kind].url)}
   const url=URL.createObjectURL(file),audio=new Audio(url);audio.preload='auto';audio.preservesPitch=true;audio.playbackRate=rate;
-  audio.addEventListener('ended',()=>{if(playing&&master()===audio){base=cur;pt0=performance.now();useClock=true}});
+  audio.addEventListener('ended',()=>{if(playing&&master()===audio){if(loopOn)restart();else{base=cur;pt0=performance.now();useClock=true}}});
   const tr=T[kind]={audio,url,peaks:null,max:1,name:file.name};
   slotOn(SL[kind],true);
   applyVol();if(playing){audio.currentTime=cur/1000;audio.play().catch(()=>{})}else audio.currentTime=cur/1000;
@@ -202,6 +211,7 @@ function play(){
   mT=-1;lastOut=0;playing=true;base=cur;pt0=performance.now();const m=master();useClock=!m;
   for(const k of KS)if(T[k]){const a=T[k].audio;a.currentTime=cur/1000;a.playbackRate=rate;a.play().catch(()=>{})}
 }
+function restart(){seek(0);for(const k of KS)if(T[k])T[k].audio.play().catch(()=>{})}
 function pause(){if(!playing)return;cur=time();playing=false;for(const k of KS)if(T[k])T[k].audio.pause();dirty=true}
 const toggle=()=>playing?pause():play();
 function jump(i){if(!chart)return;i=Math.max(0,Math.min(chart.secs.length-1,i|0));seek(chart.secs[i].start)}
@@ -213,7 +223,7 @@ function arrow(x,y,s,lane,fill,alpha){
   ctx.save();ctx.translate(x,y);ctx.rotate(ROT[lane]);ctx.globalAlpha=alpha;
   const h=s/2,q=s/4;ctx.beginPath();ctx.moveTo(-h,0);ctx.lineTo(0,-h);ctx.lineTo(0,-q);ctx.lineTo(h,-q);ctx.lineTo(h,q);ctx.lineTo(0,q);ctx.lineTo(0,h);ctx.closePath();
   if(fill){ctx.fillStyle=fill;ctx.fill()}
-  ctx.lineWidth=2;ctx.lineJoin='round';ctx.strokeStyle=fill?'rgba(0,0,0,.65)':'rgba(255,255,255,.35)';ctx.stroke();ctx.restore();
+  ctx.lineWidth=Math.max(2,s/20);ctx.lineJoin='round';ctx.strokeStyle=fill?'rgba(0,0,0,.65)':'rgba(255,255,255,.35)';ctx.stroke();ctx.restore();
 }
 function wave(tr,x,w,HD,H,playY,color){
   ctx.fillStyle='rgba(255,255,255,.03)';ctx.fillRect(x,HD,w,H-HD);
@@ -224,13 +234,13 @@ function wave(tr,x,w,HD,H,playY,color){
 function draw(){
   const W=cv.clientWidth,H=cv.clientHeight;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);
   if(!chart)return;
-  const HD=34,playY=HD+(H-HD)*.2,LW=54,wfW=72,gap=14,SEP=96,gridW=LW*8+SEP;
+  const HD=34,playY=HD+(H-HD)*.2,LW=54*nsize,AS=40*nsize,BS=Math.max(1,nsize),wfW=72,gap=14,SEP=96,gridW=LW*8+SEP;
   const x0=Math.max(8,(W-(wfW*3+gap*3+gridW+70))/2),gx=x0+wfW*3+gap*3,gr=gx+gridW;
   const colX=c=>gx+c*LW+(c>=4?SEP:0);
   const tAt=y=>cur+(y-playY)/zoom,yAt=t=>playY+(t-cur)*zoom,tmin=tAt(HD),tmax=tAt(H);
   ctx.font='600 12px "Avenir Next","Segoe UI",system-ui,sans-serif';ctx.textAlign='center';ctx.fillStyle='#9c98aa';
   ctx.fillText('Instrumental',x0+wfW/2,22);ctx.fillText('Opp. voice',x0+wfW+gap+wfW/2,22);ctx.fillText('Player voice',x0+(wfW+gap)*2+wfW/2,22);
-  ctx.fillText('Opponent',gx+LW*2,22);ctx.fillText('Player',colX(4)+LW*2,22);
+  ctx.fillText(mirror?'Player':'Opponent',gx+LW*2,22);ctx.fillText(mirror?'Opponent':'Player',colX(4)+LW*2,22);
   ctx.save();ctx.beginPath();ctx.rect(0,HD,W,H-HD);ctx.clip();
   wave(T.inst,x0,wfW,HD,H,playY,'#5b8def');wave(T.vo,x0+wfW+gap,wfW,HD,H,playY,'#d98be0');wave(T.vp,x0+(wfW+gap)*2,wfW,HD,H,playY,'#f0a04b');
   for(let c=0;c<8;c++){ctx.fillStyle=c%2?'rgba(255,255,255,.015)':'rgba(255,255,255,.045)';ctx.fillRect(colX(c),HD,LW,H-HD)}
@@ -243,14 +253,14 @@ function draw(){
   }
   const lit=Array(8).fill(0),showDup=$('#dupchk').checked,N=chart.notes;
   for(let i=Math.max(0,lb(N,n=>n.t,tmin-chart.maxLen-60));i<N.length&&N[i].t<=tmax+60;i++){
-    const n=N[i],cx=colX(n.col)+LW/2,y=yAt(n.t);
-    if(n.len>0){const h=n.len*zoom;ctx.globalAlpha=n.t+n.len<cur?.25:.55;ctx.fillStyle=COL[n.lane];ctx.fillRect(cx-6,y,12,h);ctx.globalAlpha=1}
+    const n=N[i],col=colOf(n),cx=colX(col)+LW/2,y=yAt(n.t);
+    if(n.len>0){const h=n.len*zoom;ctx.globalAlpha=n.t+n.len<cur?.25:.55;ctx.fillStyle=COL[n.lane];ctx.fillRect(cx-6*nsize,y,12*nsize,h);ctx.globalAlpha=1}
     const past=n.t<cur-25;
-    if(n.t<=cur&&cur-n.t<140)lit[n.col]=Math.max(lit[n.col],1-(cur-n.t)/140);
-    arrow(cx,y,40,n.lane,COL[n.lane],past?.4:1);
-    if(showDup&&n.dup>1){ctx.beginPath();ctx.arc(cx+17,y-17,8,0,7);ctx.fillStyle='#ff9a5c';ctx.fill();ctx.fillStyle='#14121a';ctx.textAlign='center';ctx.font='700 10px system-ui,sans-serif';ctx.fillText(n.dup,cx+17,y-13.5);ctx.textAlign='left'}
+    if(n.t<=cur){const e=cur-n.t-n.len;if(e<140)lit[col]=Math.max(lit[col],e<=0?1:1-e/140)}
+    arrow(cx,y,AS,n.lane,COL[n.lane],past?.4:1);
+    if(showDup&&n.dup>1){ctx.beginPath();ctx.arc(cx+AS*.42,y-AS*.42,8*BS,0,7);ctx.fillStyle='#ff9a5c';ctx.fill();ctx.fillStyle='#14121a';ctx.textAlign='center';ctx.font=`700 ${10*BS}px system-ui,sans-serif`;ctx.fillText(n.dup,cx+AS*.42,y-AS*.42+3.5*BS);ctx.textAlign='left'}
   }
-  for(let c=0;c<8;c++){const cx=colX(c)+LW/2,l=lit[c];arrow(cx,playY,40*(1+l*.12),c%4,l>0?COL[c%4]:null,l>0?.35+.65*l:.8)}
+  for(let c=0;c<8;c++){const cx=colX(c)+LW/2,l=lit[c];arrow(cx,playY,AS,c%4,l>0?COL[c%4]:null,l>0?.35+.65*l:.8)}
   ctx.fillStyle='rgba(255,255,255,.55)';ctx.fillRect(x0,Math.round(playY)-1,gr-x0,1);
   ctx.restore();
 }
@@ -264,7 +274,7 @@ function hud(){
 let lastSync=0;
 function frame(now){
   if(chart){
-    if(playing){cur=time();if(cur>=chart.end){cur=chart.end;pause()}
+    if(playing){cur=time();if(cur>=chart.end){if(loopOn)restart();else{cur=chart.end;pause()}}
       if(now-lastSync>400){lastSync=now;const m=master();if(m&&!useClock)for(const k of KS){const a=T[k]&&T[k].audio;if(a&&a!==m&&Math.abs(a.currentTime-m.currentTime)>.05)a.currentTime=m.currentTime}}}
     if(playing||dirty){draw();hud();dirty=false}
   }
@@ -278,7 +288,7 @@ function loadChart(file){
   const fr=new FileReader();
   fr.onload=()=>{try{
     const c=parse(JSON.parse(fr.result));pause();chart=c;cur=0;
-    c.file=file.name;$('#ttl').textContent=c.name;chartUi();
+    c.file=file.name;rule=c.fixed?'lane':'section';$('#rule').value=rule;$('#ttl').textContent=c.name;chartUi();
     $('#bpmIn').value=c.bpm;$('#spdIn').value=c.speed;
     $('#empty').hidden=true;slotOn('c',true);
     for(const id of['play','prev','next','secn','seek','bpmIn','spdIn','save','reset'])$('#'+id).disabled=false;
@@ -286,7 +296,7 @@ function loadChart(file){
   }catch(e){say(e instanceof SyntaxError?'This file is not valid JSON.':e.message,true)}};
   fr.onerror=()=>say('The file could not be read.',true);fr.readAsText(file);
 }
-const LBL={c:['Chart (.json)','Replace chart'],i:['Instrumental','Replace instrumental'],o:['Opponent voice','Replace opponent voice'],p:['Player/Both voice','Replace player/both voice']};
+const LBL={c:['Chart (.json)','Replace chart'],i:['Instrumental','Replace instrumental'],o:['Opponent voice','Replace opponent voice'],p:['Player voice','Replace player voice']};
 function slotOn(k,on){$('#b'+k).classList.toggle('on',on);$('#t'+k).textContent=LBL[k][on?1:0];$('#x'+k).hidden=!on}
 const okDiscard=()=>!chart||(chart.bpm===chart.bpm0&&chart.speed===chart.speed0)||confirm('Discard your unsaved BPM and note speed edits?');
 function removeAudio(kind){
@@ -329,7 +339,15 @@ function setZoom(z,skipNum){zoom=Math.max(.05,Math.min(2.5,z));$('#zoom').value=
 $('#zoom').oninput=e=>setZoom(+e.target.value);
 $('#zoomN').oninput=e=>{const v=parseFloat(e.target.value);if(v>=10&&v<=500)setZoom(v/100*.5,true)};
 $('#zoomN').onchange=()=>setZoom(zoom);
+function setNsize(v,skipNum){nsize=Math.max(.5,Math.min(3,v));$('#nz').value=nsize;if(!skipNum)$('#nzN').value=+nsize.toFixed(2);dirty=true}
+$('#nz').oninput=e=>setNsize(+e.target.value);
+$('#nzN').oninput=e=>{const v=parseFloat(e.target.value);if(v>=.5&&v<=3)setNsize(v,true)};
+$('#nzN').onchange=()=>setNsize(nsize);
+$('#loopchk').onchange=e=>{loopOn=e.target.checked};
 $('#dupchk').onchange=()=>dirty=true;
+$('#rule').onchange=e=>{rule=e.target.value;dirty=true};
+$('#swapchk').onchange=e=>{swapOwn=e.target.checked;dirty=true};
+$('#mirchk').onchange=e=>{mirror=e.target.checked;dirty=true};
 const VK={vm:'main',vi:'inst',vo:'vo',vp:'vp'};
 function setVol(id,p,skipNum){p=Math.max(0,Math.min(100,p));vol[VK[id]]=p/100;$('#'+id).value=p/100;if(!skipNum)$('#'+id+'N').value=Math.round(p);applyVol()}
 for(const id in VK){
