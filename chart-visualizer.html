@@ -33,13 +33,14 @@ h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em;overflow-wrap:a
 #empty{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:24px;color:var(--mut);pointer-events:none}
 #empty[hidden]{display:none}
 #empty b{display:block;color:var(--fg);font-size:22px;margin-bottom:6px}
-#bar{display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;padding:10px 18px;border-top:1px solid var(--ln);background:var(--panel)}
+#bar{position:relative;display:grid;grid-template-columns:1fr minmax(0,980px) 1fr;gap:10px 16px;align-items:center;padding:10px 18px;border-top:1px solid var(--ln);background:var(--panel)}
+.mid{grid-column:2;display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:12px 22px}
+.menubtn{grid-column:3;justify-self:end}
 #bar button{font:inherit;font-weight:600;color:var(--fg);background:none;border:1.5px solid var(--fg);border-radius:6px;padding:6px 14px;cursor:pointer;min-width:74px}
 #bar button:hover:not(:disabled){background:var(--fg);color:var(--bg)}
 #bar button:disabled{opacity:.4;cursor:default}
 #bar button:focus-visible,#bar input:focus-visible,#bar select:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
 #time{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;min-width:112px}
-#bpm{color:var(--mut);font-variant-numeric:tabular-nums;min-width:74px}
 .grp{display:flex;align-items:center;gap:6px;white-space:nowrap}
 #secn,.num{width:62px;background:var(--bg);color:var(--fg);border:1px solid var(--ln);border-radius:4px;padding:4px 6px;font:inherit}
 #bar .num{width:58px}
@@ -50,10 +51,17 @@ h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em;overflow-wrap:a
 .sbtn:disabled{opacity:.4;cursor:default}
 .sbtn:focus-visible,.num:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
 #bar select{background:var(--bg);color:var(--fg);border:1px solid var(--ln);border-radius:4px;padding:4px;font:inherit}
-#bar label{color:var(--mut);display:flex;align-items:center;gap:6px;white-space:nowrap}
+#menu{position:absolute;right:18px;bottom:calc(100% + 8px);width:min(400px,calc(100vw - 24px));max-height:calc(100vh - 110px);overflow:auto;display:grid;gap:12px;padding:14px 16px;background:var(--panel);border:1px solid var(--ln);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.45);z-index:5}
+#menu[hidden]{display:none}
+#menu label{color:var(--mut)}
+#menu .row{display:grid;grid-template-columns:96px minmax(0,1fr) auto;gap:10px;align-items:center}
+#menu .nv{display:flex;align-items:center;gap:4px;min-width:84px}
+#menu .row.sel select{grid-column:2/4;min-width:0}
+#menu .chk{display:flex;align-items:center;gap:8px;color:var(--fg)}
+#menu hr{border:0;border-top:1px solid var(--ln);width:100%;margin:2px 0}
+@media(max-width:820px){#bar{grid-template-columns:1fr}.mid,.menubtn{grid-column:1}.menubtn{justify-self:stretch}#menu{right:12px}}
 #bar input[type=range]{accent-color:var(--acc)}
-#seek{flex:1 1 220px;min-width:160px}
-.vol{width:84px}
+#seek{flex:1 1 260px;min-width:160px}
 </style>
 </head>
 <body>
@@ -75,25 +83,32 @@ h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em;overflow-wrap:a
 </header>
 <div id="stage">
   <canvas id="cv" aria-label="Chart notes"></canvas>
-  <div id="empty"><div><b>No chart loaded</b>Drop a chart .json here, plus optional instrumental and voices audio files.<br>Names with “opponent” go to the opponent voice column. Other “voice” files, including a single Voices file, go to the player voice column.</div></div>
+  <div id="empty"><div><b>No chart loaded</b>Drop a .json here, plus optional instrumental and voices audio files.<br>For more info see README.md</div></div>
 </div>
 <footer id="bar">
-  <button id="play" disabled>Play</button>
-  <div class="grp"><button id="prev" disabled aria-label="Previous section" style="min-width:0;padding:6px 10px">‹</button>section <input id="secn" type="number" min="0" value="0" disabled> / <span id="sect">0</span><button id="next" disabled aria-label="Next section" style="min-width:0;padding:6px 10px">›</button></div>
-  <div id="time">00:00.00</div><div id="bpm">0 BPM</div>
-  <input type="range" id="seek" min="0" max="1" step="1" value="0" disabled aria-label="Position">
-  <label>Speed <select id="rate"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label>
-  <label>Zoom <input type="range" id="zoom" min="0.1" max="2" step="0.01" value="0.5"><input class="num" type="number" id="zoomN" min="10" max="500" value="100" aria-label="Zoom percent">%</label>
-  <label>Note size <input type="range" id="nz" min="0.5" max="3" step="0.05" value="1"><input class="num" type="number" id="nzN" min="0.5" max="3" step="0.1" value="1" aria-label="Note size multiplier">×</label>
-  <label>Main <input class="vol" type="range" id="vm" min="0" max="1" step="0.01" value="1"><input class="num" type="number" id="vmN" min="0" max="100" value="100" aria-label="Main volume percent">%</label>
-  <label>Instrumental <input class="vol" type="range" id="vi" min="0" max="1" step="0.01" value="1"><input class="num" type="number" id="viN" min="0" max="100" value="100" aria-label="Instrumental volume percent">%</label>
-  <label>Opp. voice <input class="vol" type="range" id="vo" min="0" max="1" step="0.01" value="1"><input class="num" type="number" id="voN" min="0" max="100" value="100" aria-label="Opponent voice volume percent">%</label>
-  <label>Player voice <input class="vol" type="range" id="vp" min="0" max="1" step="0.01" value="1"><input class="num" type="number" id="vpN" min="0" max="100" value="100" aria-label="Player voice volume percent">%</label>
-  <label><input type="checkbox" id="loopchk"> Loop</label>
-  <label><input type="checkbox" id="dupchk" checked> Mark stacked duplicates</label>
-  <label title="How notes are split between opponent and player. Charts in the Psych 1.0 format (psych_v1) use lanes; older charts use mustHitSection."><span>Note sides</span> <select id="rule"><option value="lane">By lane (Psych 1.0)</option><option value="section">By section (older Psych)</option></select></label>
-  <label title="Moves every note to the other side. Use it when a mod charts the opponent and player the wrong way round."><input type="checkbox" id="swapchk"> Swap opponent/player notes</label>
-  <label title="Puts the player columns on the left and the opponent columns on the right, like mods that swap the strum positions."><input type="checkbox" id="mirchk"> Mirror sides</label>
+  <div class="mid">
+    <button id="play" disabled>Play</button>
+    <div class="grp"><button id="prev" disabled aria-label="Previous section" style="min-width:0;padding:6px 10px">‹</button>section <input id="secn" type="number" min="0" value="0" disabled> / <span id="sect">0</span><button id="next" disabled aria-label="Next section" style="min-width:0;padding:6px 10px">›</button></div>
+    <div id="time">00:00.00</div>
+    <input type="range" id="seek" min="0" max="1" step="1" value="0" disabled aria-label="Position">
+  </div>
+  <button id="menubtn" class="menubtn" aria-haspopup="true" aria-expanded="false" aria-controls="menu">Settings ▾</button>
+  <div id="menu" hidden role="group" aria-label="Settings">
+    <label class="row"><span>Speed</span><input type="range" id="rate" min="0.1" max="3" step="0.05" value="1"><span class="nv"><input class="num" type="number" id="rateN" min="0.1" max="3" step="0.05" value="1" aria-label="Speed multiplier">×</span></label>
+    <label class="row"><span>Zoom</span><input type="range" id="zoom" min="0.1" max="2" step="0.01" value="0.5"><span class="nv"><input class="num" type="number" id="zoomN" min="10" max="500" step="any" value="100" aria-label="Zoom percent">%</span></label>
+    <label class="row"><span>Note size</span><input type="range" id="nz" min="0.5" max="3" step="0.05" value="1"><span class="nv"><input class="num" type="number" id="nzN" min="0.5" max="3" step="0.05" value="1" aria-label="Note size multiplier">×</span></label>
+    <hr>
+    <label class="row"><span>Main</span><input type="range" id="vm" min="0" max="1" step="0.01" value="1"><span class="nv"><input class="num" type="number" id="vmN" min="0" max="100" value="100" aria-label="Main volume percent">%</span></label>
+    <label class="row"><span>Instrumental</span><input type="range" id="vi" min="0" max="1" step="0.01" value="1"><span class="nv"><input class="num" type="number" id="viN" min="0" max="100" value="100" aria-label="Instrumental volume percent">%</span></label>
+    <label class="row"><span>Opp. voice</span><input type="range" id="vo" min="0" max="1" step="0.01" value="1"><span class="nv"><input class="num" type="number" id="voN" min="0" max="100" value="100" aria-label="Opponent voice volume percent">%</span></label>
+    <label class="row"><span>Player voice</span><input type="range" id="vp" min="0" max="1" step="0.01" value="1"><span class="nv"><input class="num" type="number" id="vpN" min="0" max="100" value="100" aria-label="Player voice volume percent">%</span></label>
+    <hr>
+    <label class="chk"><input type="checkbox" id="loopchk"> Loop</label>
+    <label class="chk"><input type="checkbox" id="dupchk" checked> Mark stacked duplicates</label>
+    <label class="row sel" title="How notes are split between opponent and player. Charts in the Psych 1.0 format (psych_v1) use lanes; older charts use mustHitSection."><span>Note sides</span><select id="rule"><option value="lane">By lane (Psych 1.0)</option><option value="section">By section (older Psych)</option></select></label>
+    <label class="chk" title="Moves every note to the other side. Use it when a mod charts the opponent and player the wrong way round."><input type="checkbox" id="swapchk"> Swap opponent/player notes</label>
+    <label class="chk" title="Puts the player columns on the left and the opponent columns on the right, like mods that swap the strum positions."><input type="checkbox" id="mirchk"> Mirror sides</label>
+  </div>
 </footer>
 <script>
 const $=s=>document.querySelector(s);
@@ -164,55 +179,57 @@ function save(){
 
 function curSec(){return Math.max(0,lb(chart.secs,s=>s.start,cur+.5)-1)}
 
-/* ---------- audio ---------- */
-function master(){return (T.inst||T.vp||T.vo||{}).audio||null}
-function applyVol(){for(const k of KS)if(T[k])T[k].audio.volume=Math.min(1,vol.main*vol[k])}
+/* ---------- audio ----------
+   Playback uses the same decoded buffers as the waveforms (Web Audio), so seeking is exact
+   and every track starts from the same sample position. The chart follows the audio clock. */
+function master(){return T.inst||T.vp||T.vo||null}
+function longest(){let b=null;for(const k of KS){const t=T[k];if(t&&(!b||t.buf.duration>b.buf.duration))b=t}return b}
+function ctxA(){if(!actx)actx=new (window.AudioContext||window.webkitAudioContext)();return actx}
+function applyVol(){for(const k of KS)if(T[k])T[k].gain.gain.value=Math.min(1,vol.main*vol[k])}
+const tok={inst:0,vo:0,vp:0};
+let startCtx=0,startPos=0,gen=0;
+function killSrc(tr){if(tr&&tr.src){tr.src.onended=null;try{tr.src.stop()}catch(e){}try{tr.src.disconnect()}catch(e){}tr.src=null}}
+function dropTrack(kind){const tr=T[kind];if(!tr)return;killSrc(tr);try{tr.gain.disconnect()}catch(e){}T[kind]=null}
+function startTrack(k,when){
+  const tr=T[k];if(!tr)return;
+  const off=(startPos+(when-startCtx)*rate*1000)/1000;
+  if(off>=tr.buf.duration)return;
+  const src=actx.createBufferSource(),g=gen;src.buffer=tr.buf;src.playbackRate.value=rate;src.connect(tr.gain);
+  src.onended=()=>{if(g===gen&&playing&&loopOn&&tr===longest())restart()};
+  tr.src=src;src.start(when,off);
+}
+function stopSources(){gen++;for(const k of KS)killSrc(T[k])}
+function startSources(){const ac=ctxA(),when=ac.currentTime+.03;startCtx=when;startPos=cur;for(const k of KS)startTrack(k,when)}
 async function loadAudio(file,kind){
-  if(T[kind]){T[kind].audio.pause();URL.revokeObjectURL(T[kind].url)}
-  const url=URL.createObjectURL(file),audio=new Audio(url);audio.preload='auto';audio.preservesPitch=true;audio.playbackRate=rate;
-  audio.addEventListener('ended',()=>{if(playing&&master()===audio){if(loopOn)restart();else{base=cur;pt0=performance.now();useClock=true}}});
-  const tr=T[kind]={audio,url,peaks:null,max:1,name:file.name};
-  slotOn(SL[kind],true);
-  applyVol();if(playing){audio.currentTime=cur/1000;audio.play().catch(()=>{})}else audio.currentTime=cur/1000;
-  say(`Decoding ${file.name} for the waveform…`);
+  const my=++tok[kind];dropTrack(kind);slotOn(SL[kind],true);dirty=true;
+  say(`Decoding ${file.name}…`);
   try{
-    actx=actx||new (window.AudioContext||window.webkitAudioContext)();
-    const buf=await actx.decodeAudioData(await file.arrayBuffer());
+    const ac=ctxA(),buf=await ac.decodeAudioData(await file.arrayBuffer());
+    if(my!==tok[kind])return;
     const chs=[...Array(buf.numberOfChannels)].map((_,c)=>buf.getChannelData(c)),bs=Math.max(1,Math.round(buf.sampleRate*.005));
     const n=Math.ceil(buf.length/bs),p=new Float32Array(n);let mx=0;
     for(let i=0;i<n;i++){let m=0;const e=Math.min(buf.length,(i+1)*bs);for(const d of chs)for(let j=i*bs;j<e;j+=3){const v=Math.abs(d[j]);if(v>m)m=v}p[i]=m;if(m>mx)mx=m}
-    tr.peaks=p;tr.max=mx||1;say(`${file.name} loaded.`);
-  }catch(e){say(`${file.name}: the waveform could not be drawn, but playback may still work.`,true)}
+    const gain=ac.createGain();gain.connect(ac.destination);
+    T[kind]={buf,gain,src:null,peaks:p,max:mx||1,name:file.name};
+    applyVol();if(playing)startTrack(kind,ac.currentTime+.03);
+    say(`${file.name} loaded.`);
+  }catch(e){if(my===tok[kind]){slotOn(SL[kind],false);say(`${file.name} could not be read as audio.`,true)}}
   dirty=true;
 }
 
 /* ---------- transport ---------- */
-/* The browser reports audio position in coarse steps, so the chart is smoothed between steps. */
 function time(){
-  const m=master();
-  if(m&&!useClock){
-    const now=performance.now(),t=m.currentTime*1000;
-    if(t!==mT){mT=t;mW=now}
-    let out=m.paused?t:mT+(now-mW)*rate;
-    if(out-t>120)out=t;
-    if(out<lastOut&&lastOut-out<60)out=lastOut;
-    return lastOut=out;
-  }
-  return base+(performance.now()-pt0)*rate;
+  if(!playing)return cur;
+  return startPos+Math.max(0,actx.currentTime-(actx.outputLatency||0)-startCtx)*1000*rate;
 }
 function seek(t){
-  if(!chart)return;mT=-1;lastOut=0;cur=Math.max(0,Math.min(chart.end,t));
-  for(const k of KS)if(T[k])T[k].audio.currentTime=cur/1000;
-  base=cur;pt0=performance.now();const m=master();
-  useClock=!m||(isFinite(m.duration)&&cur/1000>=m.duration);dirty=true;
+  if(!chart)return;cur=Math.max(0,Math.min(chart.end,t));
+  if(playing){stopSources();startSources()}
+  dirty=true;
 }
-function play(){
-  if(!chart||playing)return;if(cur>=chart.end-50)cur=0;
-  mT=-1;lastOut=0;playing=true;base=cur;pt0=performance.now();const m=master();useClock=!m;
-  for(const k of KS)if(T[k]){const a=T[k].audio;a.currentTime=cur/1000;a.playbackRate=rate;a.play().catch(()=>{})}
-}
-function restart(){seek(0);for(const k of KS)if(T[k])T[k].audio.play().catch(()=>{})}
-function pause(){if(!playing)return;cur=time();playing=false;for(const k of KS)if(T[k])T[k].audio.pause();dirty=true}
+function play(){if(!chart||playing)return;if(cur>=chart.end-50)cur=0;ctxA().resume();playing=true;startSources()}
+function restart(){seek(0)}
+function pause(){if(!playing)return;cur=time();playing=false;stopSources();dirty=true}
 const toggle=()=>playing?pause():play();
 function jump(i){if(!chart)return;i=Math.max(0,Math.min(chart.secs.length-1,i|0));seek(chart.secs[i].start)}
 function prevSec(){const i=curSec();jump(cur-chart.secs[i].start>250?i:i-1)}
@@ -267,15 +284,13 @@ function draw(){
 
 /* ---------- HUD + loop ---------- */
 function hud(){
-  const i=curSec();$('#time').textContent=tf(cur);$('#bpm').textContent=+chart.secs[i].bpm.toFixed(2)+' BPM';
+  const i=curSec();$('#time').textContent=tf(cur);
   if(document.activeElement!==$('#secn'))$('#secn').value=i;
-  $('#seek').value=cur;$('#play').textContent=playing?'Pause':'Play';
+  if(!seekDrag)$('#seek').value=cur;$('#play').textContent=playing?'Pause':'Play';
 }
-let lastSync=0;
-function frame(now){
+function frame(){
   if(chart){
-    if(playing){cur=time();if(cur>=chart.end){if(loopOn)restart();else{cur=chart.end;pause()}}
-      if(now-lastSync>400){lastSync=now;const m=master();if(m&&!useClock)for(const k of KS){const a=T[k]&&T[k].audio;if(a&&a!==m&&Math.abs(a.currentTime-m.currentTime)>.05)a.currentTime=m.currentTime}}}
+    if(playing){cur=time();if(cur>=chart.end){if(loopOn)restart();else{cur=chart.end;pause()}}}
     if(playing||dirty){draw();hud();dirty=false}
   }
   requestAnimationFrame(frame);
@@ -300,17 +315,15 @@ const LBL={c:['Chart (.json)','Replace chart'],i:['Instrumental','Replace instru
 function slotOn(k,on){$('#b'+k).classList.toggle('on',on);$('#t'+k).textContent=LBL[k][on?1:0];$('#x'+k).hidden=!on}
 const okDiscard=()=>!chart||(chart.bpm===chart.bpm0&&chart.speed===chart.speed0)||confirm('Discard your unsaved BPM and note speed edits?');
 function removeAudio(kind){
-  const tr=T[kind];if(!tr)return;const was=playing;pause();
-  tr.audio.pause();tr.audio.removeAttribute('src');tr.audio.load();URL.revokeObjectURL(tr.url);T[kind]=null;
-  slotOn(SL[kind],false);
-  say(`${tr.name} removed.${master()?'':' No audio loaded, so playback is silent.'}`);dirty=true;if(was)play();
+  const name=T[kind]?T[kind].name:'Audio';tok[kind]++;dropTrack(kind);slotOn(SL[kind],false);
+  say(`${name} removed.${master()?'':' No audio loaded, so playback is silent.'}`);dirty=true;
 }
 function removeChart(){
   if(!chart||!okDiscard())return;pause();chart=null;cur=0;
   $('#ttl').textContent='Chart visualizer';$('#meta').textContent='Load a Psych Engine chart (.json). Audio is optional.';
   $('#empty').hidden=false;slotOn('c',false);
   for(const id of['play','prev','next','secn','seek','bpmIn','spdIn','save','reset'])$('#'+id).disabled=true;
-  $('#time').textContent='00:00.00';$('#bpm').textContent='0 BPM';$('#secn').value=0;$('#sect').textContent=0;$('#seek').value=0;
+  $('#time').textContent='00:00.00';$('#secn').value=0;$('#sect').textContent=0;$('#seek').value=0;
   $('#play').textContent='Play';$('#bpmIn').value='';$('#spdIn').value='';
   ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,cv.clientWidth,cv.clientHeight);say('Chart removed.');
 }
@@ -333,8 +346,19 @@ addEventListener('drop',e=>{e.preventDefault();document.body.classList.remove('d
 /* ---------- controls ---------- */
 $('#play').onclick=toggle;$('#prev').onclick=prevSec;$('#next').onclick=nextSec;
 $('#secn').onchange=e=>jump(+e.target.value);
+let seekDrag=false;
+$('#seek').addEventListener('pointerdown',()=>seekDrag=true);
+addEventListener('pointerup',()=>seekDrag=false);
 $('#seek').oninput=e=>seek(+e.target.value);
-$('#rate').onchange=e=>{rate=+e.target.value;if(playing){base=time();pt0=performance.now()}for(const k of KS)if(T[k])T[k].audio.playbackRate=rate};
+function setRate(v,skipNum){v=Math.max(.1,Math.min(3,v));const c=playing?time():cur;rate=v;if(playing){stopSources();cur=c;startSources()}$('#rate').value=v;if(!skipNum)$('#rateN').value=+v.toFixed(2)}
+$('#rate').oninput=e=>setRate(+e.target.value);
+$('#rateN').oninput=e=>{const v=parseFloat(e.target.value);if(v>=.1&&v<=3)setRate(v,true)};
+$('#rateN').onchange=()=>setRate(rate);
+const mb=$('#menubtn'),mn=$('#menu');
+function setMenu(o){mn.hidden=!o;mb.setAttribute('aria-expanded',String(o))}
+mb.onclick=()=>setMenu(mn.hidden);
+addEventListener('pointerdown',e=>{if(!mn.hidden&&!mn.contains(e.target)&&!mb.contains(e.target))setMenu(false)});
+addEventListener('keydown',e=>{if(e.key==='Escape'&&!mn.hidden){setMenu(false);mb.focus()}});
 function setZoom(z,skipNum){zoom=Math.max(.05,Math.min(2.5,z));$('#zoom').value=zoom;if(!skipNum)$('#zoomN').value=Math.round(zoom/.5*100);dirty=true}
 $('#zoom').oninput=e=>setZoom(+e.target.value);
 $('#zoomN').oninput=e=>{const v=parseFloat(e.target.value);if(v>=10&&v<=500)setZoom(v/100*.5,true)};
@@ -370,7 +394,7 @@ cv.addEventListener('pointermove',e=>{if(!drag)return;seek(cur-(e.clientY-drag.y
 const endDrag=()=>{if(drag&&drag.was)play();drag=null};
 cv.addEventListener('pointerup',endDrag);cv.addEventListener('pointercancel',endDrag);
 addEventListener('keydown',e=>{
-  if(!chart||e.target.matches('input[type=number],select'))return;
+  if(!chart||e.target.matches('input[type=number],select')||(e.target.closest&&e.target.closest('#menu')))return;
   const k=e.code;if(k==='Space'&&e.target.matches('.sbtn'))return;
   if(k==='Space'){e.preventDefault();toggle()}
   else if(k==='ArrowRight'){e.preventDefault();nextSec()}
